@@ -3,6 +3,24 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
 app = FastAPI()
+# Lab1
+import time
+from fastapi import Request
+from fastapi.middleware.cors import CORSMiddleware 
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins= ["*"],
+    allow_credentials= True,
+    allow_methods= ["*"],
+    allow_headers= ["*"],
+)
+
+@app.middleware("http")
+async def log_requests(request: Request, call_next):
+    start = time.perf_counter()
+    response = await call_next(request)
+    print(f"{request.method} {request.url.path} -> {response.status_code} ({time.perf_counter()-start:.3f}s)")
+    return response
 
 #====== Static Files =====
 
@@ -71,27 +89,29 @@ def read_root():
 # @app.get("/items")   === Lab1===
 # def get_items():
 #    return items
+# Lab2
+from fastapi import Depends,Header
+# Tạo hàm Dependency phân trang[ cite:4]
+def pagination(skip: int = Query(0,ge = 0),limit:int = Query(10,ge = 1, le = 100)):
+    return {"skip":skip,"limit":limit}
+def verify_api_key(x_api_key: str = Header(...)):
+    if x_api_key != "expected-secret":
+        raise HTTPException(status_code = 401, detail = "Invaid API key")
+    return x_api_key
+
 
 @app.get("/items", response_model=ItemListResponse)
 def list_items(
-    skip: int = Query(0, ge=0),
-    limit: int = Query(10, ge=1, le=100),
-
+    page: dict = Depends(pagination),
     min_price: float | None = None,
     max_price: float | None = None,
+    q: str | None = Query(None,min_length = 2),
+    sort_by: str = Query("id",pattern = "^(id|name|price)$"),
+    order: str = Query("asc",pattern ="^(asc|desc)$" )
 
-    q: str | None = Query(None, min_length=2),
-
-    sort_by: str = Query(
-        "id",
-        pattern="^(id|name|price)$"
-    ),
-
-    order: str = Query(
-        "asc",
-        pattern="^(asc|desc)$"
-    )
 ):
+    skip = page["skip"]
+    limit = page["limit"]
 
     # Start with all item
     filtered_items = items.copy()
@@ -414,3 +434,11 @@ def predict_house_price(data: HousePriceRequest):
         "predicted_price": price,
         "currency": "VND"
     }
+
+from fastapi import Response,Cookie
+@app.get("/visits")
+def count_visit(response: Response, visits:str | None = Cookie(default = None)):
+    count = int(visits) if visits else 0
+    count += 1
+    response.set_cookie(key = "visits", value = str(count), httponly = True, samesite = "lax")
+    return {"visits":count}
